@@ -390,7 +390,12 @@
 }
 
 .ol-style-layer {
-    top: 100px;
+    top: 9em;
+    left: 0.5em;
+}
+
+.ol-action-mode-draw {
+    top: 6.5em;
     left: 0.5em;
 }
 
