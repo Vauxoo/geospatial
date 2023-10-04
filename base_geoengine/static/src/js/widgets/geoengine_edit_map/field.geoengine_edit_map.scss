@@ -1,3 +1,11 @@
+
+$ol-tooltip-border-color: #e5e7eb;
+$ol-tooltip-border-radius: 0.375rem;
+$ol-tooltip-padding: 0.75rem 1rem;
+$ol-tooltip-text-color: #374151;
+$ol-tooltip-shadow-color: #0e0d0d33;
+$ol-tooltip-gray-color: #6b7280;
+
 .o_field_geo_multi_polygon,
 .o_field_geo_point,
 .o_field_geo_polygon,
@@ -11,6 +19,19 @@
     width: 100%;
     height: 100%;
 }
+
+.ol-polygon-type-control {
+    width: 17rem;
+    background-color: white;
+    color: $ol-tooltip-text-color;
+    border-radius: $ol-tooltip-border-radius;
+    border: none;
+    position: absolute;
+    left: 1rem;
+    font-weight: bold;
+    bottom: 1.2rem;
+}
+
 .ol-tooltip {
     position: relative;
     background: rgba(0, 0, 0, 0.5);
@@ -23,16 +44,11 @@
     cursor: default;
     user-select: none;
 }
+
 .ol-tooltip-measure {
     opacity: 1;
     font-weight: bold;
 }
-
-$ol-tooltip-border-color: #e5e7eb;
-$ol-tooltip-border-radius: 0.375rem;
-$ol-tooltip-padding: 0.75rem 1rem;
-$ol-tooltip-text-color: #374151;
-$ol-tooltip-shadow-color: #0e0d0d33;
 
 .ol-tooltip-values-container {
     background-color: white;
@@ -40,7 +56,7 @@ $ol-tooltip-shadow-color: #0e0d0d33;
     border-radius: $ol-tooltip-border-radius;
     display: inline-block;
     width: 18rem;
-    color: #6b7280;
+    color: $ol-tooltip-gray-color;
     font-size: 0.875rem;
     box-shadow: 0 3px 10px $ol-tooltip-shadow-color;
     position: relative;
@@ -66,5 +82,37 @@ $ol-tooltip-shadow-color: #0e0d0d33;
             font-weight: bold;
             font-size: 1.15rem;
         }
+    }
+}
+
+.ol-layers-container {
+    $ol-layers-border-color: #d1d3d7;
+    position: absolute;
+    right: 34%;
+    bottom: 1.2rem;
+    .ol-layers-element {
+        padding: 0.6rem;
+        border-radius: $ol-tooltip-border-radius;
+        background-color: white;
+        gap: 0.5rem;
+        width: 30rem;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        button {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            color: $ol-tooltip-text-color;
+            border: 1px solid $ol-layers-border-color;
+            object-fit: cover;
+            padding: 0.8rem 1rem;
+            width: 7rem;
+            border-radius: $ol-tooltip-border-radius;
+            font-size: 1rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        } 
     }
 }

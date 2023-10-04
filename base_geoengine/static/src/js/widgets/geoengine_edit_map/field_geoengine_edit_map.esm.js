@@ -10,10 +10,9 @@ import {registry} from "@web/core/registry";
 import {useService} from "@web/core/utils/hooks";
 import {standardFieldProps} from "@web/views/fields/standard_field_props";
 import { 
-    HECTARE_FACTOR, 
     CUSTOM_LAYERS,
-    ACTION_MODES,
-    FEATURE_OPACITY
+    FEATURE_OPACITY,
+    POLYGON_TYPES
 } from "../../constants";
 
 import {Component, onMounted, onRendered, onWillStart, useEffect} from "@odoo/owl";
@@ -48,7 +47,7 @@ export class FieldGeoEngineEditMap extends Component {
             this.restrictedExtent = result.restricted_extent;
             this.srid = result.srid;
             this.mapBoxToken = session.map_box_token || "",
-            this.createLayers();
+            this.createLayers(this.props.record.data?.default_map_layer);
             this.renderMap();
             this.setValue(this.props.value);
             this.actionMode = null;
@@ -77,19 +76,12 @@ export class FieldGeoEngineEditMap extends Component {
         });
     }
 
-    isDrawAllowed() {
-        //*NOTE this will be used in the future
-        // return this.actionMode === ACTION_MODES.DRAW
-        // the land is a required field, so if it's not set we can't draw
-        return this.props.record.data.city_id?.length > 0 ?? false
-    }
     /**
      * Displays geo data on the map using the collection of features.
      */
-    createVectorLayer() {
+    createVectorLayer(colorHex="#0000f5") {
         this.features = new ol.Collection();
         this.source = new ol.source.Vector({features: this.features});
-        const colorHex = this.props.color ? this.props.color : "#ee9900";
         const color = chroma(colorHex).alpha(FEATURE_OPACITY).css();
         const darkenColor = chroma(colorHex).darken(1).css();
         const fill = new ol.style.Fill({
@@ -116,28 +108,31 @@ export class FieldGeoEngineEditMap extends Component {
     /**
      * Call the method that creates the layer to display the geo data on the map.
      */
-    // TODO: the selected layer will be a configuration parameter, right now the default layer is the OSM layer
-    createLayers() {
+    createLayers(activeLayer) {
         this.vectorLayer = this.createVectorLayer();
+        this.layer_list = []
         this.osmLayer = new ol.layer.Tile({
             source: new ol.source.OSM(),
+            visible: !this.mapBoxToken,
+            properties: {
+                layerName: 'osm',
+                image: 'base_geoengine/static/src/images/osm_view.png'
+            }
         });
-        this.layer_list = [this.osmLayer]
+        this.layer_list.push(this.osmLayer)
         if (!!this.mapBoxToken) {
-            const customLayers = Object.keys(CUSTOM_LAYERS).reduce((ac, key) => {
-                ac[key] = new ol.layer.Tile({
+            CUSTOM_LAYERS.forEach(({layerName, layerURL, image}) => {
+                const layer = new ol.layer.Tile({
                     source: new ol.source.XYZ({
-                        url: `${CUSTOM_LAYERS[key]}${this.mapBoxToken}`,
-                        visible: false
-                    })
+                        url: `${layerURL}${this.mapBoxToken}`,
+                    }),
+                    visible: false,
+                    properties: { layerName, image }
                 })
-                return ac
-            }, {})
-            const { satellite, streets, outdoors } = customLayers
-            this.satelliteLayer = satellite
-            this.streetLayer = streets
-            this.outdoorsLayer = outdoors
-            this.layer_list = [this.satelliteLayer, this.streetLayer, this.outdoorsLayer, this.osmLayer]
+                this.layer_list.push(layer)
+            })
+            const defaultLayer = this.layer_list.find(layer =>layer.getProperties().layerName === activeLayer)
+            defaultLayer.setVisible(true)
         }
     }
 
@@ -250,14 +245,7 @@ export class FieldGeoEngineEditMap extends Component {
                 this.map.removeOverlay(this.measureTooltipOverlay);
                 const geom = e.feature.getGeometry();
                 this.onUIChange(geom);
-                /* we calculate the values:
-                    - area => expressed in hectares
-                    - latitude
-                    - longitude
-                */
-                const values = this.calculateValues(geom);
-                await this.saveValues(values)
-                this.createValuesTooltip(values);
+                this.createValuesTooltip();
                 this.valuesTooltipOverlay.setPosition(this.tooltipCoord)
                 this.resetMeasureTooltip()
                 ol.Observable.unByKey(this.listener);
@@ -269,6 +257,12 @@ export class FieldGeoEngineEditMap extends Component {
                 this.map.removeInteraction(this.drawInteraction)
             );
         }
+
+        // const polygonTypeControl = this.createPolygonTypeControl();
+        // this.polygonTypeControl = new ol.control.Control({element: polygonTypeControl});
+        // this.map.addControl(this.polygonTypeControl);
+
+
         //TODO: edit mode is gonna be disabled for now
         //  else {
         //     void (
@@ -299,35 +293,19 @@ export class FieldGeoEngineEditMap extends Component {
         //     });
         // }
 
-        // Trash Control
         const element = this.createTrashControl();
 
         this.clearmapControl = new ol.control.Control({element: element});
 
         this.map.addControl(this.clearmapControl);
 
-        // FullScreen Control
-
         if (!!this.mapBoxToken) {
-            const elementLayers = this.createLayerControl();
+            const elementLayers = this.createLayersControl();
 
             this.layersControl = new ol.control.Control({element: elementLayers});
 
             this.map.addControl(this.layersControl);
-
-            //*NOTE Draw Control this must be created in the draw mode
-            // const drawButton = this.createDrawControl();
-            // this.drawControl = new ol.control.Control({element: drawButton});
-            // this.map.addControl(this.drawControl);
         }
-    }
-
-    /**
-     * Create the div that will contain the buttons.
-     */
-    createControlsContainer() {
-        this.controlsContainer = document.createElement("section");
-        this.controlsContainer.className = "d-flex flex-direction-column ol-control ol-unselectable";
     }
 
     /**
@@ -348,6 +326,21 @@ export class FieldGeoEngineEditMap extends Component {
         return element;
     }
 
+    createPolygonTypeControl() {
+        this.selectPolygonType = document.createElement("select");
+        this.selectPolygonType.addEventListener("change", e => {
+            const color = e.target.value;
+        })
+        this.selectPolygonType.className = `form-select form-select-lg ol-polygon-type-control`;
+        POLYGON_TYPES.forEach(type => {
+            const option = document.createElement("option");
+            option.textContent = type.name;
+            option.value = type.color;
+            this.selectPolygonType.appendChild(option);
+        });
+        return this.selectPolygonType;
+    }
+
     /**
      * Create the button that allows you to draw on the map.
      * @returns the div in which the button is located.
@@ -356,10 +349,21 @@ export class FieldGeoEngineEditMap extends Component {
         const button = document.createElement("button");
         button.innerHTML = '<i class="fa fa-pencil"/>';
         button.addEventListener("click", () => {
-            this.actionMode = ACTION_MODES.DRAW
         });
         const element = document.createElement("div");
         element.className = "ol-control ol-action-mode-draw action-button";
+        element.appendChild(button);
+        return element;
+    }
+
+    createEditControl() {
+        const button = document.createElement("button");
+        button.innerHTML = '<i class="fa fa-edit"/>';
+        button.addEventListener("click", () => {
+            this.actionMode = ACTION_MODES.EDIT
+        });
+        const element = document.createElement("div");
+        element.className = "ol-control ol-action-mode-edit action-button";
         element.appendChild(button);
         return element;
     }
@@ -385,27 +389,27 @@ export class FieldGeoEngineEditMap extends Component {
      * Create the buttons that change the map layers.
      * @returns the div in which the buttons are located.
      */
-    createLayerControl() {
-        const layers = [
-            { name: 'Satellite', layer: this.satelliteLayer },
-            { name: 'Street', layer: this.streetLayer },
-            { name: 'Outdoors', layer: this.outdoorsLayer },
-            { name: 'OSM', layer: this.osmLayer }
-        ];
+    createLayersControl() {
+        const layersContainer = document.createElement("div");
+        layersContainer.classList.add("ol-layers-container");
         const elementLayers = document.createElement("div");
-        elementLayers.className = "ol-control ol-style-layer";
-
-        layers.forEach(layer => {
+        elementLayers.classList.add("ol-layers-element");
+        layersContainer.appendChild(elementLayers);
+        this.layer_list.forEach(layer => {
+            const layerName = layer.getProperties().layerName;
+            const bgImage = layer.getProperties().image;
             const button = document.createElement("button");
-            button.id = layer.name;
-            button.innerHTML = layer.name;
-            button.addEventListener("click", () => {
-                layers.forEach(l => l.layer.setVisible(l === layer));
+            if (layerName === "satellite") button.classList.add("text-white");
+            button.id = layerName;
+            button.textContent = layerName;
+            button.style.backgroundImage = `url(${bgImage})`;
+            button.addEventListener("click", e => {
+                this.layer_list.forEach(l => l.setVisible(l.getProperties().layerName === e.target.id));
             });
             elementLayers.appendChild(button);
         });
 
-        return elementLayers;
+        return layersContainer;
     }
 
     /**
@@ -417,10 +421,12 @@ export class FieldGeoEngineEditMap extends Component {
             layers: this.layer_list,
             view: new ol.View({
                 center: [0, 0],
-                zoom: 5,
+                zoom: 6,
             }),
         });
         this.map.addLayer(this.vectorLayer);
+        const snap = new ol.interaction.Snap({source: this.source});
+        this.map.addInteraction(snap);
         this.format = new ol.format.GeoJSON({
             internalProjection: this.map.getView().getProjection(),
             externalProjection: "EPSG:" + this.srid,
@@ -428,20 +434,21 @@ export class FieldGeoEngineEditMap extends Component {
         if (!this.props.readonly) {
             this.setupControls();
         }
-        this.map.on('pointermove', (e) => {
-            const feature = this.map.forEachFeatureAtPixel(e.pixel, f => f);
-            if (feature) {
-                const geometry = feature.getGeometry();
-                const { Polygon, MultiPolygon } = ol.geom
-                if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
-                    const extent = geometry.getExtent();
-                    const center = ol.extent.getCenter(extent);
-                    this.valuesTooltipOverlay.setPosition(center);
-                    return;
+        if(this.mapBoxToken) {
+            this.map.on('pointermove', (e) => {
+                const feature = this.map.forEachFeatureAtPixel(e.pixel, f => f);
+                if (feature) {
+                    if (this.props.value) {
+                        const geometry = feature.getGeometry();
+                        const extent = geometry.getExtent();
+                        const center = ol.extent.getCenter(extent);
+                        this.valuesTooltipOverlay.setPosition(center);
+                        return;
+                    }
                 }
-            }
-            this.valuesTooltipOverlay.setPosition(undefined);
-        });
+                void (this.valuesTooltipOverlay && this.valuesTooltipOverlay.setPosition(undefined));
+            });
+        }
     }
     /**
      * Creates a new measure tooltip
@@ -473,34 +480,15 @@ export class FieldGeoEngineEditMap extends Component {
         this.createMeasureTooltip();
     }
     /**
-     * Calculates the area , the length and the latitude of the polygon.
-     * @param {ol.sphere.Polygon} polygon The polygon.
-     * @return {string} Formatted area.
-     */
-    calculateValues (polygon) {
-        const area = ol.sphere.getArea(polygon) / HECTARE_FACTOR;
-        /*
-            arr[0] => longitude
-            arr[1] => latitude
-            arr[2] => altitude
-        */
-        const [longitude, latitude] = polygon.getInteriorPoints().getCoordinates().flat(1)
-        return {
-            area,
-            longitude,
-            latitude,
-        }
-    };
-    /**
     * Creates a new values tooltip
     */
-    createValuesTooltip(values) {
+    createValuesTooltip() {
         if (this.valuesTooltipElement) {
             this.valuesTooltipElement.parentNode.removeChild(this.valuesTooltipElement);
         }
         this.valuesTooltipElement = document.createElement('div');
         this.valuesTooltipElement.className = 'ol-tooltip-values-container';
-        this.addValuesToTooltip(values);
+        this.addValuesToTooltip();
         this.valuesTooltipOverlay = new ol.Overlay({
             element: this.valuesTooltipElement,
             positioning: 'bottom-center',
@@ -518,8 +506,8 @@ export class FieldGeoEngineEditMap extends Component {
      *
      * @returns {void}
      */
-    addValuesToTooltip(calcValues) {
-        const {  display_name, partner_id, area, longitude, latitude } = this.props.record.data
+    addValuesToTooltip() {
+        const { display_name, partner_id, area, longitude, latitude } = this.props.record.data
         const partnerName = partner_id?.[1] ?? 'No partner'
         const landName = display_name ?? 'No land name'
         this.valuesTooltipElement.innerHTML = `
@@ -533,8 +521,8 @@ export class FieldGeoEngineEditMap extends Component {
             </div>
         `
         const $toolTipContent = this.valuesTooltipElement.querySelector('.ol-tooltip-values-content')
-        const objValues = calcValues ? calcValues : { area, longitude, latitude }
-        for (const [unit, value] of Object.entries(objValues)) {
+        const values =  { area, longitude, latitude }
+        for (const [unit, value] of Object.entries(values)) {
             const meassureUnit = document.createElement('p');
             const roundedValue = value.toFixed(2)
             meassureUnit.textContent = `${unit}: ${roundedValue}`;
@@ -542,38 +530,9 @@ export class FieldGeoEngineEditMap extends Component {
         }
     }
 
-    /**
-     * Saves the land values to the DB.
-     * @param {Object} values - The land values to save.
-     * @param {number} values.area - The area of the land.
-     * @param {number} values.longitude - The longitude of the land.
-     * @param {number} values.latitude - The latitude of the land.
-     * @returns {Promise<void>} A promise that resolves when the values are saved.
-     */
-    async saveValues(values) {
-        const { area, longitude, latitude } = values;
-        await this.orm.call(
-            "project.agriculture.land",
-            "save_land_values",
-            [{
-                id: this.props.record?.data?.id ?? false,
-                area, 
-                longitude, 
-                latitude
-            }]
-        );
-    }
-    // Maybe it's a better idea to create a drawinState, with a pencil icon,
-    // and to create a form to add fields like Nombre de parcela, partner, 
-    // Ubicación geográfica (latitud y longitud) y Área en hectáreas and once the submit button is clicked
-    // we can create the feature and save it to the database
-    handleActionModes(e) {
-
-    }
 }
 
 FieldGeoEngineEditMap.template = "base_geoengine.FieldGeoEngineEditMap";
-
 FieldGeoEngineEditMap.props = {
     ...standardFieldProps,
     opacity: {type: Number, optional: true},
