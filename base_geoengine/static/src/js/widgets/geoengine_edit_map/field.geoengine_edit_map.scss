@@ -5,6 +5,7 @@ $ol-tooltip-padding: 0.75rem 1rem;
 $ol-tooltip-text-color: #374151;
 $ol-tooltip-shadow-color: #0e0d0d33;
 $ol-tooltip-gray-color: #6b7280;
+$ol-tooltip-bg-color: rgba(0, 0, 0, 0.5);
 
 .o_field_geo_multi_polygon,
 .o_field_geo_point,
@@ -21,15 +22,16 @@ $ol-tooltip-gray-color: #6b7280;
 }
 
 .ol-polygon-type-control {
-    width: 17rem;
+    max-width: 26rem;
     background-color: white;
-    color: $ol-tooltip-text-color;
     border-radius: $ol-tooltip-border-radius;
     border: none;
     position: absolute;
     left: 1rem;
     font-weight: bold;
+    font-size: 1.5rem;
     bottom: 1.2rem;
+    color: $ol-tooltip-gray-color;
 }
 
 .ol-tooltip {
@@ -114,5 +116,29 @@ $ol-tooltip-gray-color: #6b7280;
             font-weight: bold;
             text-transform: uppercase;
         } 
+    }
+}
+
+.action-button {
+    .custom-button-tooltip {
+        visibility: hidden;
+        background-color: $ol-tooltip-bg-color;
+        color: #fff;
+        text-align: center;
+        padding: 5px;
+        position: absolute;
+        z-index: 1;
+        bottom: -30%;
+        left: 160%;
+        opacity: 0.9;
+        transition: opacity 0.3s ease-in-out;
+        width: 10rem;
+        border-radius: $ol-tooltip-border-radius;
+        font-weight: bold;
+    }
+    &:hover {
+        .custom-button-tooltip {
+            visibility: visible;
+        }
     }
 }

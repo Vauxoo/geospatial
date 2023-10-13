@@ -20,10 +20,6 @@ export const CUSTOM_LAYERS = [
 export const FEATURE_OPACITY = 0.2;
 export  const POLYGON_TYPES = [
     {
-        name: "Property boundary",
-        color: "#000000"
-    },
-    {
         name: "Field",
         color: "#ff0000"
     },
@@ -53,10 +49,10 @@ export  const POLYGON_TYPES = [
     },
     {
         name: "Building",
-        color: "#8000ff"
+        color: "#800012"
     },
     {
         name: "Other",
-        color: "#808080"
+        color: "#005B41"
     }
 ];

@@ -7,7 +7,8 @@
 import {loadBundle} from "@web/core/assets";
 import { session } from "@web/session";
 import {registry} from "@web/core/registry";
-import {useService} from "@web/core/utils/hooks";
+import {useService, useOwnedDialogs} from "@web/core/utils/hooks";
+import {WarningDialog} from "@web/core/errors/error_dialogs";
 import {standardFieldProps} from "@web/views/fields/standard_field_props";
 import { 
     CUSTOM_LAYERS,
@@ -22,6 +23,7 @@ export class FieldGeoEngineEditMap extends Component {
         // Allows you to have a unique id if you put the same field in the view several times
         this.id = `map_${Date.now()}`;
         this.orm = useService("orm");
+        this.addDialog = useOwnedDialogs();
 
         onWillStart(() =>
             Promise.all([
@@ -79,30 +81,45 @@ export class FieldGeoEngineEditMap extends Component {
     /**
      * Displays geo data on the map using the collection of features.
      */
-    createVectorLayer(colorHex="#0000f5") {
+    createVectorLayer(colorHex="#0000f5", includeLabel=false) {
         this.features = new ol.Collection();
         this.source = new ol.source.Vector({features: this.features});
         const color = chroma(colorHex).alpha(FEATURE_OPACITY).css();
         const darkenColor = chroma(colorHex).darken(1).css();
-        const fill = new ol.style.Fill({
-            color,
-        });
-        const stroke = new ol.style.Stroke({
+        const { Fill, Stroke, Style, Text } = ol.style;
+        const { Vector } = ol.layer;
+        const fill = new Fill({color});
+        const stroke = new Stroke({
             color: darkenColor,
             width: 5,
         });
-        return new ol.layer.Vector({
-            source: this.source,
-            style: new ol.style.Style({
-                fill,
-                stroke,
-                image: new ol.style.Circle({
-                    radius: 5,
-                    fill,
-                    stroke,
-                }),
+        const polygonStyle = new Style({
+            fill,
+            stroke
+        })
+        if(!includeLabel) {
+            return new Vector({
+                source: this.source,
+                style: polygonStyle
+            });
+        }
+        const labelStyle = new Style({
+            text: new Text({
+                font: 'bold 12px Calibri,sans-serif',
+                overflow: true,
+                fill: new Fill({
+                    color: '#000',
+                })
             }),
         });
+        return new Vector({
+            source: this.source,
+            style: feature => {
+                const label = feature.get("name") || "";
+                labelStyle.getText().setText(label);
+                return [polygonStyle, labelStyle];
+            }
+        })
     }
 
     /**
@@ -182,6 +199,10 @@ export class FieldGeoEngineEditMap extends Component {
                 geometry: new ol.format.GeoJSON().readGeometry(value),
                 labelPoint: new ol.format.GeoJSON().readGeometry(value),
             });
+            // TODO: check this part
+            // this.mainLand = ft.getGeometry();
+            // const extent = this.mainLand.getExtent();
+            // this.mainLandCenter = ol.extent.getCenter(extent);
             this.source.clear();
             this.source.addFeature(ft);
 
@@ -228,23 +249,23 @@ export class FieldGeoEngineEditMap extends Component {
             this.map.addInteraction(this.drawInteraction);
 
             this.drawInteraction.on("drawstart", (e) => {
-                this.createMeasureTooltip();
-                // the event represents the sketch of the new feature being drawn.
+                this.createTooltipInfo();
                 this.sketch = e.feature;
                 this.tooltipCoord = e.coordinate;
-                this.measureTooltipElement.textContent = "calculating...";
+                this.infoTooltipElement.textContent = "Click to continue drawing the Property Boundary"
                 this.listener = this.sketch.getGeometry().on("change", e => {
                     const geom = e.target;
                     this.tooltipCoord = geom.getInteriorPoint().getCoordinates();
-                    this.measureTooltipOverlay.setPosition(this.tooltipCoord);
+                    this.infoTooltipOverlay.setPosition(this.tooltipCoord);
                 })
             })
             
             this.drawInteraction.on("drawend", async (e) => {
-                // remove the measureOverlay from the map
-                this.map.removeOverlay(this.measureTooltipOverlay);
-                const geom = e.feature.getGeometry();
-                this.onUIChange(geom);
+                this.map.removeOverlay(this.infoTooltipOverlay);
+                this.mainLand = e.feature.getGeometry();
+                const extent = this.mainLand.getExtent();
+                this.mainLandCenter = ol.extent.getCenter(extent);
+                this.onUIChange(this.mainLand);
                 this.createValuesTooltip();
                 this.valuesTooltipOverlay.setPosition(this.tooltipCoord)
                 this.resetMeasureTooltip()
@@ -256,13 +277,11 @@ export class FieldGeoEngineEditMap extends Component {
                 this.drawInteraction &&
                 this.map.removeInteraction(this.drawInteraction)
             );
+            const polygonTypeControl = this.createPolygonTypeControl();
+            this.polygonTypeControl = new ol.control.Control({element: polygonTypeControl});
+            this.map.addControl(this.polygonTypeControl);
         }
-
-        // const polygonTypeControl = this.createPolygonTypeControl();
-        // this.polygonTypeControl = new ol.control.Control({element: polygonTypeControl});
-        // this.map.addControl(this.polygonTypeControl);
-
-
+        
         //TODO: edit mode is gonna be disabled for now
         //  else {
         //     void (
@@ -320,25 +339,82 @@ export class FieldGeoEngineEditMap extends Component {
             if(this.valuesTooltipOverlay) this.map.removeOverlay(this.valuesTooltipOverlay);
             this.onUIChange(null);
         });
+        const tooltip = document.createElement("span");
+        tooltip.innerHTML = "Remove item";
+        tooltip.className = "custom-button-tooltip";
         const element = document.createElement("div");
         element.className = "ol-clear ol-unselectable ol-control action-button";
         element.appendChild(button);
+        element.appendChild(tooltip);
         return element;
     }
 
     createPolygonTypeControl() {
         this.selectPolygonType = document.createElement("select");
+
         this.selectPolygonType.addEventListener("change", e => {
-            const color = e.target.value;
+            this.selectPolygonType.style.backgroundColor = e.target.value;
+            this.createDrawInteraction(e.target.value)
         })
         this.selectPolygonType.className = `form-select form-select-lg ol-polygon-type-control`;
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = "Choose the type of land to draw";
+        defaultOption.selected = true;
+        defaultOption.disabled = true; 
+        this.selectPolygonType.appendChild(defaultOption);
         POLYGON_TYPES.forEach(type => {
             const option = document.createElement("option");
             option.textContent = type.name;
             option.value = type.color;
+            option.style.backgroundColor = type.color;
             this.selectPolygonType.appendChild(option);
         });
         return this.selectPolygonType;
+    }
+
+    createDrawInteraction(landColor) {
+        if(this.drawInteraction) this.map.removeInteraction(this.drawInteraction);
+        const { name:polygonName } = POLYGON_TYPES.find(type => type.color === landColor);
+        const vectorLayer = this.createVectorLayer(landColor, true);
+        const drawInteraction = new ol.interaction.Draw({
+            type: this.geoType,
+            source: this.source,
+            condition: e => {
+                const coordinate = e.coordinate;
+                const point = new ol.geom.Point(coordinate);
+                const isInside = this.mainLand.intersectsExtent(point.getExtent());
+                if (!isInside) {
+                    this.addDialog(WarningDialog, {
+                        title: this.env._t("Warning"),
+                        message: this.env._t(
+                            "The land you are trying to draw is outside of the Property Boundary."
+                        ),
+                    });
+                }
+                return isInside;
+            }
+        });
+        this.map.addLayer(vectorLayer);
+        this.map.addInteraction(drawInteraction);
+        drawInteraction.on("drawstart", e => {
+            this.createTooltipInfo();
+            this.sketch = e.feature;
+            this.tooltipCoord = e.coordinate;
+            this.infoTooltipElement.textContent = `Click to continue drawing the ${polygonName} land`
+            this.listener = this.sketch.getGeometry().on("change", e => {
+                const geom = e.target;
+                this.tooltipCoord = geom.getInteriorPoint().getCoordinates();
+                this.infoTooltipOverlay.setPosition(this.tooltipCoord);
+            })
+        });
+        drawInteraction.on("drawend", e => {
+            this.map.removeInteraction(drawInteraction);
+            this.map.removeOverlay(this.infoTooltipOverlay);
+            const feature = e.feature;
+            feature.set("name", polygonName);
+            this.resetMeasureTooltip()
+        });
     }
 
     /**
@@ -438,35 +514,32 @@ export class FieldGeoEngineEditMap extends Component {
             this.map.on('pointermove', (e) => {
                 const feature = this.map.forEachFeatureAtPixel(e.pixel, f => f);
                 if (feature) {
-                    if (this.props.value) {
-                        const geometry = feature.getGeometry();
-                        const extent = geometry.getExtent();
-                        const center = ol.extent.getCenter(extent);
-                        this.valuesTooltipOverlay.setPosition(center);
+                    if (this.mainLand) {
+                        this.valuesTooltipOverlay.setPosition(this.mainLandCenter);
                         return;
                     }
                 }
-                void (this.valuesTooltipOverlay && this.valuesTooltipOverlay.setPosition(undefined));
+                if(this.valuesTooltipOverlay) this.valuesTooltipOverlay.setPosition(undefined)
             });
         }
     }
     /**
-     * Creates a new measure tooltip
+     * Creates a new info tooltip
      */
-    createMeasureTooltip() {
-        if (this.measureTooltipElement) {
-            this.measureTooltipElement.parentNode.removeChild(this.measureTooltipElement);
+    createTooltipInfo() {
+        if (this.infoTooltipElement) {
+            this.infoTooltipElement.parentNode.removeChild(this.infoTooltipElement);
         }
-        this.measureTooltipElement = document.createElement('div');
-        this.measureTooltipElement.className = 'ol-tooltip ol-tooltip-measure';
-        this.measureTooltipOverlay = new ol.Overlay({
-            element: this.measureTooltipElement,
+        this.infoTooltipElement = document.createElement('div');
+        this.infoTooltipElement.className = 'ol-tooltip ol-tooltip-measure';
+        this.infoTooltipOverlay = new ol.Overlay({
+            element: this.infoTooltipElement,
             offset: [15, 0],
             positioning: 'bottom-center',
             stopEvent: false,
             insertFirst: false,
         });
-        this.map.addOverlay(this.measureTooltipOverlay);
+        this.map.addOverlay(this.infoTooltipOverlay);
     }
     /**
      * Resets the values of the measure tooltip element and the sketch, so that a new
@@ -476,8 +549,7 @@ export class FieldGeoEngineEditMap extends Component {
     resetMeasureTooltip() {
         // unset sketch
         this.sketch = null;
-        this.measureTooltipElement = null;
-        this.createMeasureTooltip();
+        this.infoTooltipElement = null;
     }
     /**
     * Creates a new values tooltip
@@ -500,10 +572,6 @@ export class FieldGeoEngineEditMap extends Component {
     }
     /**
      * Displays the calculated values for the drawn feature in the measure tooltip.
-     * Clears the tooltip first, then loops through the calculatedValues object and
-     * creates a new paragraph element for each unit of measure with the rounded value
-     * and unit of measure text. Appends the paragraph elements to the measure tooltip.
-     *
      * @returns {void}
      */
     addValuesToTooltip() {
