@@ -18,41 +18,47 @@ export const CUSTOM_LAYERS = [
     }
 ]
 export const FEATURE_OPACITY = 0.2;
-export  const POLYGON_TYPES = [
+export  const LAND_TYPES = [
     {
         name: "Field",
-        color: "#ff0000"
+        color: "#952323"
     },
     {
         name: "Animal",
-        color: "#00ff00"
+        color: "#82CD47"
     },
     {
         name: "Bed",
-        color: "#F1B4BB"
+        color: "#F78CA2"
     },
     {
         name: "Irrigation",
-        color: "#ffff00"
+        color: "#435334"
     },
     {
         name: "Trial",
-        color: "#00ffff"
+        color: "#E7B10A"
     },
     {
         name: "Buffer",
-        color: "#ff00ff"
+        color: "#940B92"
     },
     {
         name: "Storage",
-        color: "#ff8000"
+        color: "#FFEA20"
     },
     {
         name: "Building",
-        color: "#800012"
+        color: "#0CECDD"
     },
     {
         name: "Other",
-        color: "#005B41"
+        color: "#FF0075"
+    },
+    {
+        name: "None",
+        color: "#D0D4CA"
     }
 ];
+export const VIEW_TYPE_GEOENGINE = 'geoengine';
+
